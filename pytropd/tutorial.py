@@ -1,5 +1,5 @@
+# cleaning up namespace - sjs 1.27.22
 import numpy as np
-import scipy as sp
 from scipy.io import netcdf
 import os
 
