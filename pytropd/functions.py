@@ -238,7 +238,7 @@ def TropD_Calculate_StreamFunction(V, lat, lev):
 
     return psi
 
-def TropD_Calculate_TropopauseHeight(T ,P, Z=None,
+def TropD_Calculate_TropopauseHeight(T, P, Z=None,
                                      use_local_idx=False, force_2km=False):
     ''' 
     Calculate the Tropopause Height in isobaric coordinates 
@@ -266,15 +266,15 @@ def TropD_Calculate_TropopauseHeight(T ,P, Z=None,
                           tropopause. If Z is geopotential height (m), Ht is
                           the tropopause altitude (m)
     '''
+    
+    COMPUTE_Z = Z is not None 
 
     T = np.atleast_2d(T)
+    if COMPUTE_Z:
+        Z = np.atleast_2d(Z)
     if T.shape[-1] != P.size:
         raise ValueError(f'last axis of temperature data, size {T.shape[-1]}, '
                          f'is not aligned with pressure data, size {P.size}')
-    
-    PI = (np.linspace(1000.,1.,1000)*100.)**KAPPA
-    
-    COMPUTE_Z = Z is not None 
 
     # make P monotonically decreasing
     if P[-1] > P[0]:
@@ -287,10 +287,10 @@ def TropD_Calculate_TropopauseHeight(T ,P, Z=None,
     Pk_mid = (Pk[:-1] + Pk[1:])/2.
 
     T_mid = (T[...,:-1] + T[...,1:])/2.
-
     Gamma = (np.diff(T,axis=-1) / np.diff(Pk) * Pk_mid / T_mid
              * GRAV / SPEC_HEAT_PRES_DRY * 1000.) #K / km
     
+    PI = (np.linspace(1000.,1.,1000)*100.)**KAPPA
     interpG = interp1d(Pk_mid, Gamma, kind='linear', axis=-1,
                    fill_value='extrapolate')
     GI = interpG(PI)
@@ -314,21 +314,20 @@ def TropD_Calculate_TropopauseHeight(T ,P, Z=None,
                 TIslicer = slice(None,Pidx.size)
             Pidx_2km =  Pidx - (2000.*GRAV/SPEC_HEAT_PRES_DRY
                                 / TI[icol+(TIslicer,)] * Pidx)
-            if force_2km:
-                #ensure that the layers we search are actually 2km
-                atleast_2km = Pidx_2km>Pidx[-1]
-                if not atleast_2km.any():
-                    continue
-                Pidx_2km = Pidx_2km[atleast_2km]
-            for c in range(Pidx_2km.size):
+            
+            for c in range(Pidx.size):
                 #get the idx of 2km above each point
                 #although find nearest returns the closest idx, which may
                 #be less than 2km (in some cases much less)
-                idx2 = find_nearest(Pidx[c:], Pidx_2km[c])
+                if force_2km:
+                    #ensure that the layers we search are actually 2km
+                    idx2km = find_nearest(PI, Pidx_2km[c])
+                else:
+                    idx2km = find_nearest(Pidx[c:], Pidx_2km[c]) + idx[c]
 
                 # if the lapse rate from the first point to 2km above
                 # (inclusive) is less than 2, we've found our tropopause
-                if (GI[icol+(slice(idx[c],idx[c]+idx2+1),)] <= 2.).all():
+                if (GI[icol+(slice(idx[c],idx2km+1),)] <= 2.).all():
                     Pt[icol]=Pidx[c]
                     break
     
