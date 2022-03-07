@@ -285,8 +285,8 @@ def TropD_Calculate_TropopauseHeight(T, P, Z=None,
 
     Pk = (P*100.)**KAPPA
     Pk_mid = (Pk[:-1] + Pk[1:])/2.
-    T_mid = (T[...,:-1] + T[...,1:])/2.
 
+    T_mid = (T[...,:-1] + T[...,1:])/2.
     Gamma = (np.diff(T,axis=-1) / np.diff(Pk) * Pk_mid / T_mid
              * GRAV / SPEC_HEAT_PRES_DRY * 1000.) #K / km
     
