@@ -1,4 +1,6 @@
 *.pyc
 build/
 dist/
-
+pytropd/old_*.py
+mytropd
+old_manifest.in

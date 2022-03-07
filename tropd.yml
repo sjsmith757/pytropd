@@ -1,0 +1,17 @@
+name: tropd #name of your env
+channels:
+        - anaconda
+        - conda-forge
+        - defaults
+dependencies:
+        - python==3.6.*
+        - numpy
+        - matplotlib
+        - scipy
+        - netCDF4
+        - xarray
+        - autopep8
+        - pytest
+        - ipython
+
+# do conda env create -p $scratch/mypy -f environment.yml or conda env update ""
