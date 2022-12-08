@@ -424,8 +424,6 @@ def TropD_Metric_PE(
 
     Returns
     -------
-    PhiSH : numpy.ndarray (dim1, ..., dimN-1)
-        N-1 dimensional SH latitudes of the 1st subtropical P-E zero crossing
     Phi : numpy.ndarray (dim1, ..., dimN-1)
         N-1 dimensional latitudes of the 1st subtropical P-E zero crossing
     """
@@ -888,7 +886,7 @@ def TropD_Metric_TPB(
 
     Returns
     -------
-    PHi : numpy.ndarray (dim1, ..., dimN-2)
+    Phi : numpy.ndarray (dim1, ..., dimN-2)
         N-2 dimensional latitudes of the tropopause break
     """
 
@@ -971,7 +969,7 @@ def TropD_Metric_UAS(
 
     Returns
     -------
-    PHi : numpy.ndarray (dim1, ..., dimN-2[, dimN-1])
+    Phi : numpy.ndarray (dim1, ..., dimN-2[, dimN-1])
         N-2(N-1) dimensional latitudes of the first subtropical zero crossing of
         near-surface zonal wind
     """
@@ -1050,7 +1048,8 @@ def Shah_2020_GWL(
     Returns
     =======
     tracer_steep_lat: numpy.ndarray
-        N-2(N-1 for ``zonal_mean_tracer=True``) dimenional array of GWL latitudes in the SH
+        N-2(N-1 for ``zonal_mean_tracer=True``) dimenional array of GWL latitudes in the
+        SH
     """
 
     tracer = np.asarray(tracer)
