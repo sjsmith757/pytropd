@@ -175,7 +175,6 @@ def TropD_Metric_EDJ(
         850hPa wind
     lat : numpy.ndarray (lat,)
         latitude array
-    hem : int, 1 for NH and -1 for SH
     lev : numpy.ndarray, optional (lev,)
         vertical level array in hPa, used to find wind closest to 850hPa. if not
         provided, last axis is assumed to be lat
@@ -296,7 +295,6 @@ def TropD_Metric_OLR(
         zonal mean TOA olr (positive)
     lat : numpy.ndarray (lat,)
         latitude array
-    hem : int, 1 for NH and -1 for SH
     method : {"250W", "20W", "cutoff", "10Perc", "max", "peak"}, optional
         Method for determining the OLR maximum/threshold, by default "250W":
 
@@ -414,7 +412,6 @@ def TropD_Metric_PE(
         zonal-mean precipitation minus evaporation
     lat : numpy.ndarray (lat,)
         latitude array
-    hem : int, 1 for NH and -1 for SH
     method : {"zero_crossing"}, optional
         Method to compute the zero crossing for precipitation minus evaporation, by
         default "zero_crossing":
@@ -533,7 +530,6 @@ def TropD_Metric_PSI(
         N-dimensional zonal-mean meridional wind
     lat : numpy.ndarray (lat,)
         latitude array
-    hem : int, 1 for NH and -1 for SH
     lev : numpy.ndarray (lev,)
         vertical level array in hPa
     method : {"Psi_500", "Psi_500_10Perc", "Psi_300_700", "Psi_500_Int", "Psi_Int"},
@@ -646,7 +642,6 @@ def TropD_Metric_PSL(
         N-dimensional sea-level pressure
     lat : np.ndarray (lat,)
         latitude array
-    hem : int, 1 for NH and -1 for SH
     method : {"peak", "max"}, optional
         Method for determining latitude of max PSL, by default "peak":
 
@@ -717,7 +712,6 @@ def TropD_Metric_STJ(
         latitude array
     lev : numpy.ndarray (lev,)
         vertical level array in hPa
-    hem : int, 1 for NH and -1 for SH
     method : {"adjusted_peak", "adjusted_max", "core_peak", "core_max", "fit"}, optional
         Method for determing the latitude of the STJ maximum, by default "adjusted_peak":
 
@@ -867,7 +861,6 @@ def TropD_Metric_TPB(
         latitude array
     lev : numpy.ndarray (lev,)
         vertical levels array in hPa
-    hem : int, 1 for NH and -1 for SH
     method : {"max_gradient", "cutoff", "max_potemp"}, optional
         Method to identify tropopause break, by default "max_gradient":
 
@@ -888,6 +881,10 @@ def TropD_Metric_TPB(
     **kwargs : optional
         additional keyword arguments for :py:func:`TropD_Calculate_MaxLat` (not used
         for ``method="cutoff"``)
+
+        n : int, optional
+            Rank of moment used to calculate the location of max, e.g.,
+            ``n=1,2,4,6,8,...``, by default 6 if ``method="max"``, 30 if ``method="peak"``
 
     Returns
     -------
@@ -960,7 +957,6 @@ def TropD_Metric_UAS(
         N-dimensional zonal mean zonal wind array. Also accepts surface wind
     lat : numpy.ndarray (lat,)
         latitude array
-    hem : int, 1 for NH and -1 for SH
     lev : numpy.ndarray, optional (lev,)
         vertical level array in hPa, required if U has final dimension lev
     method : {"zero_crossing"}, optional
