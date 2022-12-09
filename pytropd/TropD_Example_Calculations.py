@@ -9,6 +9,8 @@ from scipy.io import netcdf
 import pytropd as pyt
 import matplotlib.pyplot as plt
 import matplotlib
+from os import PathLike
+from typing import List, Union, overload
 
 parser = ArgumentParser(description="Demonstrates and validates all pytropd metrics.")
 parser.add_argument(
@@ -49,7 +51,19 @@ logging.basicConfig(format="%(levelname)s: %(message)s", level=loglevel)
 
 # some functions to reduce boilerplate
 # improve file handling - sjs 2022.01.28
-def get_arrs_from_nc(file, var_list):
+@overload
+def get_arrs_from_nc(file: PathLike, var_list: str) -> np.ndarray:
+    ...
+
+
+@overload
+def get_arrs_from_nc(file: PathLike, var_list: List[str]) -> List[np.ndarray]:
+    ...
+
+
+def get_arrs_from_nc(
+    file: PathLike, var_list: Union[str, List[str]]
+) -> Union[np.ndarray, List[np.ndarray]]:
     """
     open netcdf file, construct numpy arrays from data, and close file
     arrays are returned in same order as keys in var_list
@@ -83,7 +97,9 @@ def get_arrs_from_nc(file, var_list):
 
 
 # cleaner warning system - sjs 2022.01.28
-def validate_against_metric(computed_arr, metric, hem, tol=1e-5):
+def validate_against_metric(
+    computed_arr: np.ndarray, metric: str, hem: str, tol: float = 1e-5
+) -> bool:
     """
     compare computed array for equality (within round-off error) to data
     in provided validation files and print detalied messages of results
@@ -92,8 +108,7 @@ def validate_against_metric(computed_arr, metric, hem, tol=1e-5):
     computed_arr - array to be validated
     metric (string) - short string corresponding to metric to validate with
     hem (string) - "NH" or "SH" corresponding to the hemisphere
-    verbose (bool, optional) -  whether to display detailed messaging for
-                                    checks that pass (default:True)
+    tol (float) - relative tolerance for comparing to validation data
 
     ::output::
     (bool) - whether or not the array is valid
@@ -133,7 +148,7 @@ def validate_against_metric(computed_arr, metric, hem, tol=1e-5):
 
 
 # reduce repition in saving - sjs 2022.04.27
-def save_fig_as_file(file):
+def save_fig_as_file(file: str):
     """
     saves a figure using matplotlib and log upon success
 
@@ -198,49 +213,36 @@ if DRAW_FIGS:
 
     # latitude of monthly Psi zero crossing
     # Default method = 'Psi500'
-    Phi_psi_sh, Phi_psi_nh = pyt.TropD_Metric_PSI(V, lat, lev)
+    Phi_psi_sh, Phi_psi_nh = pyt.TropD_Metric_PSI(V, lat, lev)[:2]
     # latitude of NH/SH stream function zero crossing from annual mean V
-    Phi_psi_sh_ANN, Phi_psi_nh_ANN = pyt.TropD_Metric_PSI(V_ANN, lat, lev)
+    Phi_psi_sh_ANN, Phi_psi_nh_ANN, Max_psi_sh, Max_psi_nh = pyt.TropD_Metric_PSI(
+        V_ANN, lat, lev
+    )
 
     Phi_psi_nh_mean = pyt.TropD_Calculate_Mon2Season(Phi_psi_nh, season=list(range(12)))
     Phi_psi_sh_mean = pyt.TropD_Calculate_Mon2Season(Phi_psi_sh, season=list(range(12)))
 
-    plt.figure(1, figsize=(7, 7))
-    plt.subplot(211)
-    plt.plot(
-        months,
-        Phi_psi_nh,
-        lw=1,
-        c=green_color,
-        label=r"Lat of $\Psi_{500}$ zero crossing from monthly mean V",
-    )
-    plt.plot(
-        years,
-        Phi_psi_nh_ANN,
-        lw=2,
-        c=blue_color,
-        label=r"Lat of $\Psi_{500}$ zero crossing from annual mean V",
-    )
-    plt.plot(
-        years,
-        Phi_psi_nh_mean,
-        lw=2,
-        c="k",
-        label=r"Latitude of $\Psi_{500}$ zero crossing from annual "
-        "means of monthly metric values",
-    )
-    plt.xticks(np.arange(1980, 2020, 5))
-    plt.ylabel("latitude")
-    plt.title(r"NH $\Psi_{500}$")
-    plt.subplot(212)
-    plt.plot(months, Phi_psi_sh, lw=1, c=green_color)
-    plt.plot(years, Phi_psi_sh_ANN, lw=2, c=blue_color)
-    plt.plot(years, Phi_psi_sh_mean, lw=2, c="k")
-    plt.xticks(np.arange(1980, 2020, 5))
-    plt.ylabel("latitude")
-    plt.title(r"SH $\Psi_{500}$")
-    plt.gcf().legend(loc="lower center", frameon=False)
-    plt.subplots_adjust(bottom=0.2, hspace=0.25, top=0.95, right=0.95)
+    fig, axes = plt.subplots(3, 1, num=1, figsize=(7, 8.5), sharex=True)
+    labs = [
+        r"Lat of $\Psi_{500}$ zero crossing from monthly mean V",
+        r"Lat of $\Psi_{500}$ zero crossing from annual mean V",
+        r"Latitude of $\Psi_{500}$ zero crossing from annual means of monthly metric values",
+    ]
+    (h1,) = axes[0].plot(months, Phi_psi_nh, lw=1, c=green_color)
+    (h2,) = axes[0].plot(years, Phi_psi_nh_ANN, lw=2, c=blue_color)
+    (h3,) = axes[0].plot(years, Phi_psi_nh_mean, lw=2, c="k")
+    axes[0].legend([h1, h2, h3], labs)
+    axes[0].set_ylabel(r"NH $\Psi_{500}$ latitude")
+    (h1,) = axes[1].plot(months, Phi_psi_sh, lw=1, c=green_color)
+    (h2,) = axes[1].plot(years, Phi_psi_sh_ANN, lw=2, c=blue_color)
+    (h3,) = axes[1].plot(years, Phi_psi_sh_mean, lw=2, c="k")
+    axes[1].set_ylabel(r"SH $\Psi_{500}$ latitude")
+    axes[1].legend([h1, h2, h3], labs)
+    axes[2].plot(years, -Max_psi_sh, lw=2, c=blue_color, label="SH")
+    axes[2].plot(years, Max_psi_nh, lw=2, c=lightblue_color, label="NH")
+    axes[2].legend()
+    axes[2].set_ylabel(r"$\Psi_{500}$ strength")
+    fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95)
     if SAVE_FIGS:
         save_fig_as_file("psi500.png")
     else:
@@ -251,7 +253,7 @@ if DRAW_FIGS:
     # latitude of monthly Psi zero crossing
     Phi_psi_sh_L, Phi_psi_nh_L = pyt.TropD_Metric_PSI(
         V, lat, lev, method="Psi_500", lat_uncertainty=10.0
-    )
+    )[:2]
 
     plt.figure(2)
     plt.plot(
@@ -407,28 +409,28 @@ if DRAW_FIGS:
         Phi_olr_nh,
         lw=3,
         c=green_color,
-        label="Lat of OLR 250W/m^2 cutoff (default) from monthly OLR",
+        label="Lat of OLR 250W/m$^2$ cutoff (default) from monthly OLR",
     )
     plt.plot(
         months,
         Phi_olrcs_nh,
         lw=1,
         c=tuple(0.5 * x for x in green_color),
-        label="Lat of OLR 250W/m^2 cutoff from monthly clear-sky OLR",
+        label="Lat of OLR 250W/m$^2$ cutoff from monthly clear-sky OLR",
     )
     plt.plot(
         years,
         Phi_olr_nh_ANN,
         lw=3,
         c=blue_color,
-        label="Lat of OLR 250W/m^2 cutoff from annual mean OLR",
+        label="Lat of OLR 250W/m$^2$ cutoff from annual mean OLR",
     )
     plt.plot(
         years,
         Phi_olrcs_nh_ANN,
         lw=1,
         c=tuple(0.5 * x for x in blue_color),
-        label="Lat of OLR 250W/m^2 cutoff from annual mean clear-sky OLR",
+        label="Lat of OLR 250W/m$^2$ cutoff from annual mean clear-sky OLR",
     )
     plt.ylabel("NH OLR cutoff latitude")
     plt.subplot(212)
@@ -438,7 +440,7 @@ if DRAW_FIGS:
     plt.plot(years, Phi_olrcs_sh_ANN, lw=1, c=tuple(0.5 * x for x in blue_color))
     plt.xlabel("Year")
     plt.ylabel("SH OLR cutoff latitude")
-    plt.gcf().legend(loc="lower center", frameon=False)
+    plt.gcf().legend(loc="lower center", frameon=False, fontsize=9)
     plt.subplots_adjust(bottom=0.2, hspace=0.25, top=0.95, right=0.95)
     if SAVE_FIGS:
         save_fig_as_file("OLR_cutoff.png")
@@ -452,21 +454,21 @@ if DRAW_FIGS:
         Phi_olr_nh_ANN,
         lw=3,
         c=tuple(0.5 * x for x in blue_color),
-        label="Lat of OLR 250W/m^2 cutoff (default) from annual-mean OLR",
+        label="Lat of OLR 250W/m$^2$ cutoff (default) from annual-mean OLR",
     )
     plt.plot(
         years,
         Phi_olr240_nh_ANN,
         lw=3,
         c=blue_color,
-        label="Lat of OLR 240W/m^2 cutoff from annual-mean OLR",
+        label="Lat of OLR 240W/m$^2$ cutoff from annual-mean OLR",
     )
     plt.plot(
         years,
         Phi_olr20_nh_ANN,
         lw=3,
         c=green_color,
-        label="Lat of OLR -20W/m^2 cutoff from annual-mean OLR",
+        label="Lat of OLR -20W/m$^2$ cutoff from annual-mean OLR",
     )
     plt.ylabel("NH OLR cutoff latitude")
     plt.subplot(212)
@@ -494,38 +496,35 @@ if DRAW_FIGS:
     U_ANN = pyt.TropD_Calculate_Mon2Season(U, season=list(range(12)))
     # latitude of STJ from annual mean U
     # Default method =  'adjusted_peak'
-    Phi_stj_sh_ANN_adj, Phi_stj_nh_ANN_adj = pyt.TropD_Metric_STJ(
-        U_ANN, lat, lev, method="adjusted_peak"
-    )
+    (
+        Phi_stj_sh_ANN_adj,
+        Phi_stj_nh_ANN_adj,
+        Max_stj_sh_ANN,
+        Max_stj_nh_ANN,
+    ) = pyt.TropD_Metric_STJ(U_ANN, lat, lev, method="adjusted_peak")
     Phi_stj_sh_ANN_core, Phi_stj_nh_ANN_core = pyt.TropD_Metric_STJ(
         U_ANN, lat, lev, method="core_peak"
-    )
+    )[:2]
 
-    plt.figure(6, figsize=(7, 7))
-    plt.subplot(211)
-    plt.plot(
-        years,
-        Phi_stj_nh_ANN_adj,
-        lw=2,
-        c=green_color,
-        label='Lat of STJ from anual mean U, using "adjusted peak"',
-    )
-    plt.plot(
-        years,
-        Phi_stj_nh_ANN_core,
-        lw=2,
-        c=blue_color,
-        label='Lat of STJ from anual mean U, using "core peak"',
-    )
-    plt.ylabel("NH STJ latitude")
-    plt.subplot(212)
-    plt.plot(years, Phi_stj_sh_ANN_adj, lw=2, c=green_color)
-    plt.plot(years, Phi_stj_sh_ANN_core, lw=2, c=blue_color)
-    plt.xlabel("Year")
-    plt.ylabel("SH STJ latitude")
-    plt.ylabel("latitude")
-    plt.gcf().legend(loc="lower center", frameon=False)
-    plt.subplots_adjust(bottom=0.15, hspace=0.25, top=0.95, right=0.95)
+    fig, axes = plt.subplots(3, 1, num=6, figsize=(7, 8.5), sharex=True)
+    (h1,) = axes[0].plot(years, Phi_stj_nh_ANN_adj, lw=2, c=green_color)
+    (h2,) = axes[0].plot(years, Phi_stj_nh_ANN_core, lw=2, c=blue_color)
+    labs = [
+        'Lat of STJ from anual mean U, using "adjusted peak"',
+        'Lat of STJ from anual mean U, using "core peak"',
+    ]
+    axes[0].legend([h1, h2], labs)
+    axes[0].set_ylabel("NH STJ latitude")
+    (h1,) = axes[1].plot(years, Phi_stj_sh_ANN_adj, lw=2, c=green_color)
+    (h2,) = axes[1].plot(years, Phi_stj_sh_ANN_core, lw=2, c=blue_color)
+    axes[1].legend([h1, h2], labs)
+    axes[1].set_ylabel("SH STJ latitude")
+    axes[2].plot(years, Max_stj_nh_ANN, lw=2, c=blue_color, label="NH")
+    axes[2].plot(years, Max_stj_sh_ANN, lw=2, c=lightblue_color, label="SH")
+    axes[2].legend()
+    axes[2].set_ylabel("STJ strength (m/s)")
+    axes[2].set_xlabel("Year")
+    fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95)
     if SAVE_FIGS:
         save_fig_as_file("STJ.png")
     else:
@@ -536,40 +535,40 @@ if DRAW_FIGS:
     U, lat, lev = get_arrs_from_nc(data_files["ua"], ["ua", "lat", "lev"])
     # Change axes of u to be [time, lat]
     U = np.transpose(U, (2, 1, 0))
-    Phi_edj_sh, Phi_edj_nh = pyt.TropD_Metric_EDJ(U, lat, lev, method="max")
+    Phi_edj_sh, Phi_edj_nh = pyt.TropD_Metric_EDJ(U, lat, lev, method="max")[:2]
 
     # Calculate EDJ latitude from annual mean
     U_ANN = pyt.TropD_Calculate_Mon2Season(U, season=list(range(12)))
     # latitude of EDJ from annual mean U
-    Phi_edj_sh_ANN, Phi_edj_nh_ANN = pyt.TropD_Metric_EDJ(U_ANN, lat, lev)
+    Phi_edj_sh_ANN, Phi_edj_nh_ANN, Max_edj_sh, Max_edj_nh = pyt.TropD_Metric_EDJ(
+        U_ANN, lat, lev
+    )
 
     Phi_edj_nh_mean = pyt.TropD_Calculate_Mon2Season(Phi_edj_nh, season=list(range(12)))
     Phi_edj_sh_mean = pyt.TropD_Calculate_Mon2Season(Phi_edj_sh, season=list(range(12)))
 
-    plt.figure(7, figsize=(7, 7))
-    plt.subplot(211)
-    plt.plot(
-        months, Phi_edj_nh, lw=1, c=green_color, label="Lat of EDJ from monthly mean U"
-    )
-    plt.plot(
-        years, Phi_edj_nh_ANN, lw=2, c=blue_color, label="Lat of EDJ from annual mean U"
-    )
-    plt.plot(
-        years,
-        Phi_edj_nh_mean,
-        lw=2,
-        c="k",
-        label="Lat of EDJ from annual mean of monthly metric values",
-    )
-    plt.ylabel("NH EDJ latitude")
-    plt.subplot(212)
-    plt.plot(months, Phi_edj_sh, lw=1, c=green_color)
-    plt.plot(years, Phi_edj_sh_ANN, lw=2, c=blue_color)
-    plt.plot(years, Phi_edj_sh_mean, lw=2, c="k")
-    plt.xlabel("Year")
-    plt.ylabel("SH EDJ latitude")
-    plt.gcf().legend(loc="lower center", frameon=False)
-    plt.subplots_adjust(bottom=0.2, hspace=0.25, top=0.95, right=0.95)
+    fig, axes = plt.subplots(3, 1, num=7, figsize=(7, 8.5), sharex=True)
+    (h1,) = axes[0].plot(months, Phi_edj_nh, lw=1, c=green_color)
+    (h2,) = axes[0].plot(years, Phi_edj_nh_ANN, lw=2, c=blue_color)
+    (h3,) = axes[0].plot(years, Phi_edj_nh_mean, lw=2, c="k")
+    labs = [
+        "Lat of EDJ from monthly mean U",
+        "Lat of EDJ from annual mean U",
+        "Lat of EDJ from annual mean of monthly metric values",
+    ]
+    axes[0].set_ylabel("NH EDJ latitude")
+    axes[0].legend([h1, h2, h3], labs)
+    (h1,) = axes[1].plot(months, Phi_edj_sh, lw=1, c=green_color)
+    (h2,) = axes[1].plot(years, Phi_edj_sh_ANN, lw=2, c=blue_color)
+    (h3,) = axes[1].plot(years, Phi_edj_sh_mean, lw=2, c="k")
+    axes[1].set_ylabel("SH EDJ latitude")
+    axes[1].legend([h1, h2, h3], labs)
+    axes[2].plot(years, Max_edj_sh, lw=2, c=blue_color, label="SH")
+    axes[2].plot(years, Max_edj_nh, lw=2, c=lightblue_color, label="NH")
+    axes[2].set_xlabel("Year")
+    axes[2].set_ylabel("EDJ strength (m/s)")
+    axes[2].legend()
+    fig.subplots_adjust(bottom=0.1, top=0.95, right=0.95)
     if SAVE_FIGS:
         save_fig_as_file("EDJ.png")
     else:
@@ -753,7 +752,7 @@ if DRAW_FIGS:
     # Change axes of V to be [time, lat]
     V = np.transpose(V, (2, 1, 0))
     V_ANN = pyt.TropD_Calculate_Mon2Season(V, season=list(range(12)))
-    Phi_psi_sh_ANN, Phi_psi_nh_ANN = pyt.TropD_Metric_PSI(V_ANN, lat, lev)
+    Phi_psi_sh_ANN, Phi_psi_nh_ANN = pyt.TropD_Metric_PSI(V_ANN, lat, lev)[:2]
 
     # Tropopause break
     # read meridional temperature T(time,lat,lev), latitude and level
@@ -777,10 +776,10 @@ if DRAW_FIGS:
     # Change axes of U to be [time, lat]
     U = np.transpose(U, (2, 1, 0))
     U_ANN = pyt.TropD_Calculate_Mon2Season(U, season=list(range(12)))
-    Phi_edj_sh_ANN, Phi_edj_nh_ANN = pyt.TropD_Metric_EDJ(U_ANN, lat, lev)
+    Phi_edj_sh_ANN, Phi_edj_nh_ANN = pyt.TropD_Metric_EDJ(U_ANN, lat, lev)[:2]
 
     # Subtropical jet
-    Phi_stj_sh_ANN, Phi_stj_nh_ANN = pyt.TropD_Metric_STJ(U_ANN, lat, lev)
+    Phi_stj_sh_ANN, Phi_stj_nh_ANN = pyt.TropD_Metric_STJ(U_ANN, lat, lev)[:2]
 
     # OLR
     # read zonal mean monthly TOA outgoing longwave radiation olr(time,lat)
@@ -854,12 +853,12 @@ V = np.transpose(V, (2, 1, 0))
 V_ANN = pyt.TropD_Calculate_Mon2Season(V, season=list(range(12)))
 
 # monthly PSI check
-Phi_psi_sh, Phi_psi_nh = pyt.TropD_Metric_PSI(V, lat, lev)
+Phi_psi_sh, Phi_psi_nh = pyt.TropD_Metric_PSI(V, lat, lev)[:2]
 checks_passed += validate_against_metric(Phi_psi_nh, "PSI", "NH")
 checks_passed += validate_against_metric(Phi_psi_sh, "PSI", "SH")
 
 # annual PSI check
-Phi_psi_sh_ANN, Phi_psi_nh_ANN = pyt.TropD_Metric_PSI(V_ANN, lat, lev)
+Phi_psi_sh_ANN, Phi_psi_nh_ANN = pyt.TropD_Metric_PSI(V_ANN, lat, lev)[:2]
 checks_passed += validate_against_metric(Phi_psi_nh_ANN, "PSI_ANN", "NH")
 checks_passed += validate_against_metric(Phi_psi_sh_ANN, "PSI_ANN", "SH")
 
@@ -915,25 +914,25 @@ U = np.transpose(U, (2, 1, 0))
 U_ANN = pyt.TropD_Calculate_Mon2Season(U, season=list(range(12)))
 
 # monthly EDJ check
-Phi_edj_nh = pyt.TropD_Metric_EDJ(U[..., lat >= 0.0, :], lat[lat >= 0.0], lev)
-Phi_edj_sh = pyt.TropD_Metric_EDJ(U[..., lat <= 0.0, :], lat[lat <= 0.0], lev)
+Phi_edj_nh = pyt.TropD_Metric_EDJ(U[..., lat >= 0.0, :], lat[lat >= 0.0], lev)[0]
+Phi_edj_sh = pyt.TropD_Metric_EDJ(U[..., lat <= 0.0, :], lat[lat <= 0.0], lev)[0]
 checks_passed += validate_against_metric(Phi_edj_nh, "EDJ", "NH")
 checks_passed += validate_against_metric(Phi_edj_sh, "EDJ", "SH")
 
 # annual EDJ check
-Phi_edj_sh_ANN, Phi_edj_nh_ANN = pyt.TropD_Metric_EDJ(U_ANN, lat, lev)
+Phi_edj_sh_ANN, Phi_edj_nh_ANN = pyt.TropD_Metric_EDJ(U_ANN, lat, lev)[:2]
 checks_passed += validate_against_metric(Phi_edj_nh_ANN, "EDJ_ANN", "NH")
 checks_passed += validate_against_metric(Phi_edj_sh_ANN, "EDJ_ANN", "SH")
 
 
 # Subtropical jet
 # monthly STJ check
-Phi_stj_sh, Phi_stj_nh = pyt.TropD_Metric_STJ(U, lat, lev)
+Phi_stj_sh, Phi_stj_nh = pyt.TropD_Metric_STJ(U, lat, lev)[:2]
 checks_passed += validate_against_metric(Phi_stj_nh, "STJ", "NH")
 checks_passed += validate_against_metric(Phi_stj_sh, "STJ", "SH")
 
 # annual STJ check
-Phi_stj_sh_ANN, Phi_stj_nh_ANN = pyt.TropD_Metric_STJ(U_ANN, lat, lev)
+Phi_stj_sh_ANN, Phi_stj_nh_ANN = pyt.TropD_Metric_STJ(U_ANN, lat, lev)[:2]
 checks_passed += validate_against_metric(Phi_stj_nh_ANN, "STJ_ANN", "NH")
 checks_passed += validate_against_metric(Phi_stj_sh_ANN, "STJ_ANN", "SH")
 

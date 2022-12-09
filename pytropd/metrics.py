@@ -1,7 +1,7 @@
 # Written by Ori Adam Mar.21.2017
 # Edited by Alison Ming Jul.4.2017
 # rewrite for readability/vectorization - sjs 1.27.22
-from typing import Optional, Tuple, Callable, Union
+from typing import Optional, Tuple, Callable, Union, List
 import warnings
 from functools import wraps
 from inspect import signature
@@ -24,7 +24,7 @@ KAPPA = 287.04 / 1005.7
 
 def hemisphere_handler(
     metric_func: Callable[..., Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]]
-) -> Callable:
+) -> Callable[..., Tuple[np.ndarray, ...]]:
     """
     Wrapper for metrics to allow one or two hemispheres of data to be passed
 
@@ -43,7 +43,7 @@ def hemisphere_handler(
     @wraps(metric_func)
     def wrapped_metric_func(
         arr: np.ndarray, lat: np.ndarray, *args, **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, ...]:
         """
         wrapper for pytropd metric functions which allows one or two hemispheres of data
         to be passed
@@ -64,16 +64,14 @@ def hemisphere_handler(
 
         Returns
         -------
-        PhiSH : np.ndarray, optional
+        metric_latitudeSH : np.ndarray, optional
             metric latitude in SH (if SH latitudes are provided)
-        PhiNH : np.ndarray, optional
+        metric_latitudeNH : np.ndarray, optional
             metric latitude in NH (if NH latitudes are provided)
-        UmaxSH : np.ndarray, optional
-            maximum of SH zonal wind (if using `TropD_Metric_EDJ` or `TropD_Metric_STJ`
-            and `method="fit"`)
-        UmaxNH : np.ndarray, optional
-            maximum of NH zonal wind (if using `TropD_Metric_EDJ` or `TropD_Metric_STJ`
-            and `method="fit"`)
+        metric_valueSH : np.ndarray, optional
+            maximum of SH zonal wind (if using `TropD_Metric_EDJ` or `TropD_Metric_STJ`)
+        metric_valueNH : np.ndarray, optional
+            maximum of NH zonal wind (if using `TropD_Metric_EDJ` or `TropD_Metric_STJ`)
         """
 
         kwargs.pop("hem", None)
@@ -88,9 +86,14 @@ def hemisphere_handler(
         if metric_code in ["STJ", "TPB", "PSI"]:
             has_extra_dim = True
         # these take it optionally, so we need to figure out if it was provided, either as
-        # an arg (it will be third positional and probably the only arg in args) or kwarg
+        # an arg (it will be 3rd positional/1st arg in args) or kwarg
         elif metric_code in ["UAS", "EDJ"]:
-            has_extra_dim = (len(args) > 0) or (kwargs.get("lev", None) is not None)
+            is_first_arg_arr = (
+                isinstance(next(iter(args), None), np.ndarray)
+                if len(args) > 0
+                else False
+            )
+            has_extra_dim = (is_first_arg_arr) or (kwargs.get("lev", None) is not None)
         # Shah metrics may also have an extra last dimension if zonal_mean_tracer=False
         # (but it is lon, not lev)
         elif metric_code in ["GWL", "1sigma"]:
@@ -100,56 +103,55 @@ def hemisphere_handler(
             )
         # now the TropD_Metric_TPB accepts a Z array kwarg that also needs to be split
         # based on latitude, so we need to get that if it is there
-        Z = None
-        if metric_code == "TPB":
-            Z = kwargs.pop("Z", None)
+        Z = kwargs.pop("Z", None)
         # now we just split by hemisphere and apply as if the data was for the NH
-        Phi_list = []
+        Phi_list: List[np.ndarray] = []
         if (lat < -20.0).any():
             # let's make sure we include the equator point just in case
             SHmask = lat < 0.5
-            SHarr_mask = [Ellipsis, SHmask]
-            if has_extra_dim:
-                SHarr_mask.append(slice(None))
+            SHarr_mask = [Ellipsis, SHmask] + ([slice(None)] if has_extra_dim else [])
             if Z is not None:
                 kwargs["Z"] = Z[tuple(SHarr_mask)]
-            Phi_list.append(
-                metric_func(
-                    # for the TropD_Metric_PSI, it takes meridional wind. In order to
-                    # make meridional wind in the SH like the NH, we have to flip the sign
-                    arr[tuple(SHarr_mask)] * (-1.0 if metric_code == "PSI" else 1.0),
-                    -lat[SHmask],
-                    *args,
-                    **kwargs,
-                )
+            SHoutput = metric_func(
+                # for the TropD_Metric_PSI, it takes meridional wind. In order to
+                # make meridional wind in the SH like the NH, we have to flip the sign
+                arr[tuple(SHarr_mask)] * (-1.0 if metric_code == "PSI" else 1.0),
+                -lat[SHmask],
+                *args,
+                **kwargs,
             )
-            if isinstance(Phi_list[0], tuple):
-                Phi_list[0][0] *= -1.0
+            if isinstance(SHoutput, tuple):
+                Phi_list.extend(SHoutput)
+                if metric_code == "PSI":
+                    Phi_list[1] *= -1.0
             else:
-                Phi_list[0] *= -1.0
+                Phi_list.append(SHoutput)
+            Phi_list[0] *= -1.0
         if (lat > 20.0).any():
             NHmask = lat > -0.5
-            NHarr_mask = [Ellipsis, NHmask]
-            if has_extra_dim:
-                NHarr_mask.append(slice(None))
+            NHarr_mask = [Ellipsis, NHmask] + ([slice(None)] if has_extra_dim else [])
             if Z is not None:
                 kwargs["Z"] = Z[tuple(NHarr_mask)]
-            Phi_list.append(
-                metric_func(arr[tuple(NHarr_mask)], lat[NHmask], *args, **kwargs)
+            NHoutput = metric_func(arr[tuple(NHarr_mask)], lat[NHmask], *args, **kwargs)
+            if isinstance(NHoutput, tuple):
+                Phi_list.extend(NHoutput)
+            else:
+                Phi_list.append(NHoutput)
+        if len(Phi_list) < 1:
+            raise ValueError(
+                "Not enough latitudes were provided to identify"
+                f"latitude for metric {metric_func.__name__}"
             )
+
         # one final snag before we return. TropD_Metric_EDJ and TropD_Metric_STJ
         # potentially return extra arrays if using `method="fit"`, so we need to
         # flatten our return list and potentially swap some variables if global data was
         # provided so that metric latitudes are always returned first
-        if metric_code in ["EDJ", "STJ"]:
-            method_used = kwargs.get(
-                "method", signature(metric_func).parameters["method"].default
-            )
-            if method_used == "fit":
-                Phi_list = [item for pair in Phi_list for item in pair]
-                if len(Phi_list) == 4:
-                    Phi_list[1], Phi_list[2] = Phi_list[2], Phi_list[1]
-        return tuple(Phi_list)  # type: ignore
+        if metric_code in ["EDJ", "STJ", "PSI"]:
+            if len(Phi_list) == 4:
+                Phi_list[1], Phi_list[2] = Phi_list[2], Phi_list[1]
+
+        return tuple(Phi_list)
 
     return wrapped_metric_func
 
@@ -162,7 +164,7 @@ def TropD_Metric_EDJ(
     method: str = "peak",
     n_fit: int = 1,
     **maxlat_kwargs,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     TropD Eddy Driven Jet (EDJ) Metric
 
@@ -202,10 +204,10 @@ def TropD_Metric_EDJ(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-2[, dimN-1])
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-2[, dimN-1])
         N-2(N-1) dimensional latitudes of the EDJ
-    Umax : numpy.ndarray (dim1, ..., dimN-2), conditional
-        N-2 dimensional STJ strength, returned if ``method="fit"``
+    metric_value : numpy.ndarray (dim1, ..., dimN-2)
+        N-2 dimensional EDJ strength
 
     """
 
@@ -231,6 +233,8 @@ def TropD_Metric_EDJ(
         u850 = U[..., find_nearest(lev, 850.0)]  # type: ignore
     else:
         u850 = U
+    u850 = np.atleast_2d(u850)
+    u_flat = u850.reshape(-1, lat.size)
 
     if method != "fit":  # max or peak
         # update default n to 30 for peak
@@ -242,12 +246,13 @@ def TropD_Metric_EDJ(
         maxlat_kwargs.pop("axis", None)
 
         Phi = TropD_Calculate_MaxLat(u850[..., mask], lat[mask], **maxlat_kwargs)
+        Umax = np.array(
+            [interp1d(lat, usub)(pt) for pt, usub in zip(Phi.flatten(), u_flat)]
+        ).reshape(Phi.shape)
 
-        return Phi
+        return Phi, Umax
 
     else:  # method == 'fit':
-        u_flat = u850.reshape(-1, lat.size)
-
         lat_mask = lat[mask]
         Phi = np.zeros(u850.shape[:-1])
         Umax = np.zeros(u850.shape[:-1])
@@ -272,7 +277,7 @@ def TropD_Metric_EDJ(
             # value at vertex is (4ac-b**2)/(4a)
             Umax[phi_ind] = (4.0 * p[2] * p[0] - p[1] * p[1]) / 4.0 / p[2]
 
-        return Phi, Umax  # type: ignore
+        return Phi, Umax
 
 
 @hemisphere_handler
@@ -323,7 +328,7 @@ def TropD_Metric_OLR(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-1)
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-1)
         N-1 dimensional latitudes of the near-equator OLR max/threshold crossing
     """
 
@@ -424,7 +429,7 @@ def TropD_Metric_PE(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-1)
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-1)
         N-1 dimensional latitudes of the 1st subtropical P-E zero crossing
     """
 
@@ -516,7 +521,7 @@ def TropD_Metric_PSI(
     lev: np.ndarray,
     method: str = "Psi_500",
     lat_uncertainty: float = 0.0,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     TropD Mass Streamfunction (PSI) Metric
 
@@ -550,8 +555,10 @@ def TropD_Metric_PSI(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-2)
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-2)
         N-2 dimensional latitudes of the Psi zero crossing
+    metric_value : numpy.ndarray (dim1, ..., dimN-2)
+        N-2 dimensional strength of Psi between zero crossing and equator
     """
 
     # type casting/input checking
@@ -622,7 +629,13 @@ def TropD_Metric_PSI(
             Plat_in_between, lat_masked, lat_uncertainty=lat_uncertainty
         )
 
-    return Phi
+    P_flat = np.atleast_2d(P).reshape(-1, lat.size)
+    Pmax_lat_flat = Pmax_lat_masked.flatten()
+    Pmax = np.array(
+        [interp1d(lat, Psub)(pt) for pt, Psub in zip(Pmax_lat_flat, P_flat)]
+    ).reshape(Phi.shape)
+
+    return Phi, Pmax
 
 
 @hemisphere_handler
@@ -658,7 +671,7 @@ def TropD_Metric_PSL(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-1)
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-1)
         N-1 dimensional latitudes of the subtropical PSL maximum
     """
 
@@ -696,7 +709,7 @@ def TropD_Metric_STJ(
     method: str = "adjusted_peak",
     n_fit: int = 1,
     **maxlat_kwargs,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     TropD Subtropical Jet (STJ) Metric
 
@@ -748,10 +761,10 @@ def TropD_Metric_STJ(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-2)
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-2)
         N-2 dimensional latitudes of the STJ
-    Umax : numpy.ndarray (dim1, ..., dimN-2), conditional
-        N-2 dimensional  STJ strength, returned if ``method="fit"``
+    metric_value : numpy.ndarray (dim1, ..., dimN-2)
+        N-2 dimensional STJ strength
     """
 
     U = np.asarray(U)
@@ -784,6 +797,8 @@ def TropD_Metric_STJ(
         u = u_int - U[..., idx_850]
     else:  # core_peak, core_max methods
         u = u_int
+    u = np.atleast_2d(u)
+    u_flat = u.reshape(-1, lat.size)
 
     eq_boundary = 10
     polar_boundary = 60
@@ -798,13 +813,16 @@ def TropD_Metric_STJ(
         maxlat_kwargs.pop("axis", None)
         u_masked = u[..., mask]
         if "adjusted" in method:  # adjusted_max or adjusted_peak
-            (Phi_EDJ,) = TropD_Metric_EDJ(U, lat, lev)
+            Phi_EDJ = TropD_Metric_EDJ(U, lat, lev)[0]
             lat_before_EDJ = lat[mask] < Phi_EDJ[..., None]
             u_masked = np.where(lat_before_EDJ, u_masked, np.nan)
 
         Phi = TropD_Calculate_MaxLat(u_masked, lat[mask], **maxlat_kwargs)
+        Umax = np.array(
+            [interp1d(lat, usub)(pt) for pt, usub in zip(Phi.flatten(), u_flat)]
+        ).reshape(Phi.shape)
 
-        return Phi
+        return Phi, Umax
 
     else:  # method == 'fit':
         u_flat = u.reshape(-1, lat.size)
@@ -833,7 +851,7 @@ def TropD_Metric_STJ(
             # value at vertex is (4ac-b**2)/(4a)
             Umax[phi_ind] = (4.0 * p[2] * p[0] - p[1] * p[1]) / 4.0 / p[2]
 
-        return Phi, Umax  # type: ignore
+        return Phi, Umax
 
 
 @hemisphere_handler
@@ -886,7 +904,7 @@ def TropD_Metric_TPB(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-2)
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-2)
         N-2 dimensional latitudes of the tropopause break
     """
 
@@ -969,7 +987,7 @@ def TropD_Metric_UAS(
 
     Returns
     -------
-    Phi : numpy.ndarray (dim1, ..., dimN-2[, dimN-1])
+    metric_latitude : numpy.ndarray (dim1, ..., dimN-2[, dimN-1])
         N-2(N-1) dimensional latitudes of the first subtropical zero crossing of
         near-surface zonal wind
     """
@@ -1047,7 +1065,7 @@ def Shah_2020_GWL(
 
     Returns
     =======
-    tracer_steep_lat: numpy.ndarray
+    metric_latitude : numpy.ndarray
         N-2(N-1 for ``zonal_mean_tracer=True``) dimenional array of GWL latitudes in the
         SH
     """
@@ -1109,7 +1127,7 @@ def Shah_2020_1sigma(
 
     Returns
     =======
-    tracer_sigma_lat: numpy.ndarray
+    metric_latitude : numpy.ndarray
         N-2(N-1 for ``zonal_mean_tracer=True``) dimenional array of
         1:math:`\sigma`-widths in the NH
     """

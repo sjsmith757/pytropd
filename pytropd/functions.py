@@ -311,11 +311,9 @@ def TropD_Calculate_TropopauseHeight(
         returned if Z is provided. Corresponds to Z evaluated at the tropopause. If Z is geopotential height, it is tropopause altitude (m)
     """
 
-    COMPUTE_Z = Z is not None
-
     T = np.atleast_2d(T)
-    if COMPUTE_Z:
-        Z = np.atleast_2d(Z)  # type: ignore
+    if Z is not None:
+        Z = np.atleast_2d(Z)
     if T.shape[-1] != P.size:
         raise ValueError(
             f"last axis of temperature data, size {T.shape[-1]}, "
@@ -326,8 +324,8 @@ def TropD_Calculate_TropopauseHeight(
     if P[-1] > P[0]:
         P = P[::-1]
         T = T[..., ::-1]
-        if COMPUTE_Z:
-            Z = Z[..., ::-1]  # type: ignore
+        if Z is not None:
+            Z = Z[..., ::-1]
 
     Pk = (P * 100.0) ** KAPPA
     Pk_mid = (Pk[:-1] + Pk[1:]) / 2.0
@@ -377,13 +375,11 @@ def TropD_Calculate_TropopauseHeight(
 
     Pt = Pt ** (1.0 / KAPPA) / 100.0
 
-    if COMPUTE_Z:
-        Ht = np.zeros_like(Pt)
-        # need to loop over individual columns again
-        for i in range(Ht.size):
-            icol = np.unravel_index(i, Ht.shape)
-            f = interp1d(P, Z[icol], axis=-1)  # type: ignore
-            Ht[icol] = f(Pt[icol])
+    if Z is not None:
+        Z_flat = Z.reshape(-1, P.size)
+        Ht = np.array(
+            [interp1d(P, Zcol)(Ptcol) for Zcol, Ptcol in zip(Z_flat, Pt.flatten())]
+        ).reshape(Pt.shape)
 
         return Pt, Ht
     else:

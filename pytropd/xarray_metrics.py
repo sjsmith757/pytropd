@@ -39,9 +39,7 @@ class MetricAccessor:
         method_used: str = self.params.get(
             "method", signature(metric_function).parameters["method"].default
         )
-        func_returns_vals = (self.metric_name in ["edj", "stj"]) and (
-            method_used == "fit"
-        )
+        func_returns_vals = self.metric_name in ["edj", "stj", "psi"]
         input_core_dims = [[self.lat_name]]
         # validate_data ensures self.pres_name is only defined if the metric
         # should accept it as an arg or kwarg
@@ -127,7 +125,7 @@ class MetricAccessor:
             method=("method", [method_used], method_attrs),
         )
 
-        if method_used == "fit":
+        if func_returns_vals:
             metric_maxs = xr.concat(metric_output[nhems:], dim="hemsph")  # type: ignore
             metric_maxs.attrs = {
                 "long_name": self.metric_name.upper() + " metric max",

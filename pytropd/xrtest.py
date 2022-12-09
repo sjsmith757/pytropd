@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import xarray as xr
 from pandas import date_range
@@ -11,6 +12,7 @@ from pathlib import Path
 root = Path(__file__).absolute().parent.parent
 data_dir = root / "ValidationData"
 metrics_dir = root / "ValidationMetrics"
+logging.basicConfig(level=logging.INFO)
 
 
 def get_validated_metric(metric: str) -> xr.DataArray:
@@ -30,6 +32,7 @@ def get_validated_metric(metric: str) -> xr.DataArray:
     """
     validated_metric = xr.open_dataset(metrics_dir / f"{metric}.nc")
     validated_metric = validated_metric.to_array(dim="hemsph")
+    monthly = False
     if "DJF" in metric:
         start_date = "1978-12-01"
     elif "MAM" in metric:
@@ -40,126 +43,124 @@ def get_validated_metric(metric: str) -> xr.DataArray:
         start_date = "1979-09-01"
     else:
         start_date = "1979-01-01"
+        monthly = "ANN" not in metric
     return validated_metric.assign_coords(
         hemsph=[h[-2:].upper() for h in validated_metric.hemsph.values],
         time=date_range(
-            start=start_date, periods=validated_metric.time.size, freq="12MS"
+            start=start_date,
+            periods=validated_metric.time.size,
+            freq="12MS" if not monthly else "MS",
         ),
     )
 
 
+# Define a time axis
+def add_times(ds: xr.Dataset) -> xr.Dataset:
+    return ds.assign_coords(
+        time=date_range(start="1979-01-01", periods=ds.time.size, freq="MS")
+    )
+
+
+# cleaner warning system - sjs 2022.01.28
+def validate_against_metric(
+    computed_arr: xr.DataArray, metric: str, tol: float = 1e-5
+) -> bool:
+    """
+    compare computed array for equality (within round-off error) to data
+    in provided validation files and print detalied messages of results
+
+    ::input::
+    computed_arr - array to be validated
+    metric (string) - short string corresponding to metric to validate with
+    tol (float) - relative tolerance for comparing to validation data
+
+    ::output::
+    (bool) - whether or not the array is valid
+    """
+
+    # parse input metric str for ann vs monthly vs seasonal
+    base_metric = metric.split("_")[0]
+    if "_" not in metric:
+        freq_str = "Monthly"
+    elif "_ANN" in metric:
+        freq_str = "Annual-mean"
+    else:
+        freq_str = metric.split("_")[-1]
+
+    # get the validated metric
+    Phi_valid = get_validated_metric(metric)
+
+    # check if equal (within round-off)
+    computed_arr, Phi_valid = xr.align(computed_arr, Phi_valid, join="outer")
+    pct_passing = (
+        np.isclose(computed_arr, Phi_valid, rtol=tol).sum() / computed_arr.size * 100.0
+    )
+    if pct_passing > 99.999:
+        logging.info(
+            f"OK. {freq_str} validation and calculated "
+            f"{base_metric} metrics are the same!"
+        )
+        return True
+    else:
+        logging.warning(
+            f"{freq_str} validation and calculated "
+            f" {base_metric} metrics are NOT equal with "
+            f"{pct_passing:.1f}% matching"
+        )
+        return False
+
+
+ANN_TEST = False
+
 v_data = xr.open_dataset(data_dir / "va.nc")
 u_data = xr.open_dataset(data_dir / "ua.nc")
-comb_data = xr.merge([v_data, u_data])
-comb_data = comb_data.rename(ua="u", va="v")
-# Define a time axis
-comb_data["time"] = date_range(
-    start="1979-01-01", periods=v_data.sizes["time"], freq="MS"
-)
-# yearly mean of data
-v_annual = comb_data.resample(time="AS").mean()
+uv_data = xr.merge([v_data, u_data])
+uv_data = add_times(uv_data.rename(ua="u", va="v"))
 
-psi_metrics = v_annual.pyt_metrics.xr_psi()
 
-validated_psi_metrics = get_validated_metric("PSI_ANN")
-if np.allclose(*xr.align(psi_metrics, validated_psi_metrics, join="outer")):
-    print("OK. Annual-mean Validation and calculated PSI metrics are the same!")
-else:
-    print("Warning: annual-mean Validation and calculated PSI metrics are NOT equal!")
+if ANN_TEST:  # yearly mean of data
+    uv_data = uv_data.resample(time="AS").mean()
+psi_metrics, psi_vals = uv_data.pyt_metrics.xr_psi()
+validate_against_metric(psi_metrics, "PSI" + ("_ANN" if ANN_TEST else ""))
 
 
 # Tropopause break
 # read temperature T(time,lat,lev), latitude and level
-T_data = xr.open_dataset(data_dir / "ta.nc")
-# Define a time axis
-T_data["time"] = date_range(start="1979-01-01", periods=T_data.sizes["time"], freq="MS")
-# yearly mean of data
-T_annual = T_data.resample(time="AS").mean()
-
-tpb_metrics_nh = T_annual.sortby("lat").sel(lat=slice(0, None)).pyt_metrics.xr_tpb()
-tpb_metrics_sh = T_annual.sortby("lat").sel(lat=slice(None, 0)).pyt_metrics.xr_tpb()
-tpb_metrics = xr.concat([tpb_metrics_nh, tpb_metrics_sh], "hemsph")
-
-validated_tpb_metrics = get_validated_metric("TPB_ANN")
-if np.allclose(*xr.align(tpb_metrics, validated_tpb_metrics, join="outer")):
-    print("OK. Annual-mean Validation and calculated TPB metrics are the same!")
-else:
-    print("Warning: annual-mean Validation and calculated TPB metrics are NOT equal!")
-
+T_data = add_times(xr.open_dataset(data_dir / "ta.nc"))
+if ANN_TEST:  # yearly mean of data
+    T_data = T_data.resample(time="AS").mean()
+tpb_metrics = T_data.pyt_metrics.xr_tpb()
+validate_against_metric(tpb_metrics, "TPB" + ("_ANN" if ANN_TEST else ""))
 
 # Surface pressure max (Invalid in NH)
 # read sea-level pressure ps(time,lat) and latitude
-psl_data = xr.open_dataset(data_dir / "psl.nc")
-
-psl_data["time"] = date_range(start="1979-01-01", periods=psl_data.time.size, freq="MS")
+psl_data = add_times(xr.open_dataset(data_dir / "psl.nc"))
 psl_seasonal = psl_data.resample(time="QS-DEC").mean()
-
 psl_seasonal_metrics = psl_seasonal.pyt_metrics.xr_psl()
-
 for ssn in ["DJF", "MAM", "JJA", "SON"]:
-    validated_psl_metrics = get_validated_metric(f"PSL_{ssn}")
     psl_metrics = psl_seasonal_metrics.sel(time=psl_seasonal.time.dt.season == ssn)
     if ssn == "DJF":
         psl_metrics = psl_metrics.isel(time=slice(None, -1))
-    if np.allclose(*xr.align(psl_metrics, validated_psl_metrics, join="outer")):
-        print(f"OK. {ssn} Validation and calculated PSL metrics are the same!")
-    else:
-        if ssn != "DJF":
-            print(
-                f"Warning: {ssn} Validation and calculated PSL metrics are NOT equal!"
-            )
-        else:
-            print(
-                f"Warning: {ssn} Validation and calculated PSL metrics are NOT equal!"
-                "\nHowever, this is expected because xarray computes seasonal averages "
-                "for DJF differently than TropD_Calculate_Mon2Season"
-            )
+    validate_against_metric(psl_metrics, f"PSL_{ssn}")
 
 
 # Eddy driven jet
-# read zonal wind U(time,lat,lev), latitude and level
-u_data = xr.open_dataset(data_dir / "ua.nc")
-# Define a time axis
-u_data["time"] = date_range(start="1979-01-01", periods=u_data.sizes["time"], freq="MS")
-# yearly mean of data
-u_annual = u_data.resample(time="AS").mean()
+edj_metrics, edj_vals = uv_data.sel(lev=850, method="nearest").pyt_metrics.xr_edj()
+validate_against_metric(edj_metrics, "EDJ" + ("_ANN" if ANN_TEST else ""))
 
-edj_metrics = u_annual.sel(lev=850, method="nearest").pyt_metrics.xr_edj()
-
-validated_edj_metrics = get_validated_metric("EDJ_ANN")
-if np.allclose(*xr.align(edj_metrics, validated_edj_metrics, join="outer")):
-    print("OK. Annual-mean Validation and calculated EDJ metrics are the same!")
-else:
-    print("Warning: annual-mean Validation and calculated EDJ metrics are NOT equal!")
 
 # Subtropical jet
-stj_metrics = u_annual.pyt_metrics.xr_stj()
-
-validated_stj_metrics = get_validated_metric("STJ_ANN")
-if np.allclose(*xr.align(stj_metrics, validated_stj_metrics, join="outer")):
-    print("OK. Annual-mean Validation and calculated STJ metrics are the same!")
-else:
-    print("Warning: annual-mean Validation and calculated STJ metrics are NOT equal!")
+stj_metrics, stj_vals = uv_data.pyt_metrics.xr_stj()
+validate_against_metric(stj_metrics, "STJ" + ("_ANN" if ANN_TEST else ""))
 
 
 # OLR
 # read zonal mean monthly TOA outgoing longwave radiation olr(time,lat)
-olr_data = -xr.open_dataset(data_dir / "rlnt.nc")
-# Define a time axis
-olr_data["time"] = date_range(
-    start="1979-01-01", periods=olr_data.sizes["time"], freq="MS"
-)
-# yearly mean of data
-olr_annual = olr_data.resample(time="AS").mean()
-
-olr_metrics = olr_annual.pyt_metrics.xr_olr()
-
-validated_olr_metrics = get_validated_metric("OLR_ANN")
-if np.allclose(*xr.align(olr_metrics, validated_olr_metrics, join="outer")):
-    print("OK. Annual-mean Validation and calculated OLR metrics are the same!")
-else:
-    print("Warning: annual-mean Validation and calculated OLR metrics are NOT equal!")
-
+olr_data = add_times(-xr.open_dataset(data_dir / "rlnt.nc"))
+if ANN_TEST:  # yearly mean of data
+    olr_data = olr_data.resample(time="AS").mean()
+olr_metrics = olr_data.pyt_metrics.xr_olr()
+validate_against_metric(olr_metrics, "OLR" + ("_ANN" if ANN_TEST else ""))
 
 # P minus E
 # read zonal mean monthly precipitation pr(time,lat)
@@ -167,36 +168,17 @@ pr_data = xr.open_dataset(data_dir / "pr.nc")
 latent_heat_flux = xr.open_dataset(data_dir / "hfls.nc")
 # use latent heat of vap to convert LHF to evap
 er_data = -latent_heat_flux / 2510400.0
-pe_data = (pr_data.pr - er_data.hfls).to_dataset(name="pe")
-# Define a time axis
-pe_data["time"] = date_range(
-    start="1979-01-01", periods=pe_data.sizes["time"], freq="MS"
-)
-# yearly mean of data
-pe_annual = pe_data.resample(time="AS").mean()
-
-pe_metrics = pe_annual.pyt_metrics.xr_pe()
-validated_pe_metrics = get_validated_metric("PE_ANN")
-if np.allclose(*xr.align(pe_metrics, validated_pe_metrics, join="outer")):
-    print("OK. Annual-mean Validation and calculated PE metrics are the same!")
-else:
-    print("Warning: annual-mean Validation and calculated PE metrics are NOT equal!")
+pe_data = add_times((pr_data.pr - er_data.hfls).to_dataset(name="pe"))
+if ANN_TEST:  # yearly mean of data
+    pe_data = pe_data.resample(time="AS").mean()
+pe_metrics = pe_data.pyt_metrics.xr_pe()
+validate_against_metric(pe_metrics, "PE" + ("_ANN" if ANN_TEST else ""))
 
 
 # Surface winds
 # read zonal mean surface wind U(time,lat)
-uas_data = xr.open_dataset(data_dir / "uas.nc")
-# Define a time axis
-uas_data["time"] = date_range(
-    start="1979-01-01", periods=uas_data.sizes["time"], freq="MS"
-)
-# yearly mean of data
-uas_annual = uas_data.resample(time="AS").mean()
-
-uas_metrics = uas_annual.pyt_metrics.xr_uas()
-
-validated_uas_metrics = get_validated_metric("UAS_ANN")
-if np.allclose(*xr.align(uas_metrics, validated_uas_metrics, join="outer")):
-    print("OK. Annual-mean Validation and calculated UAS metrics are the same!")
-else:
-    print("Warning: annual-mean Validation and calculated UAS metrics are NOT equal!")
+uas_data = add_times(xr.open_dataset(data_dir / "uas.nc"))
+if ANN_TEST:  # yearly mean of data
+    uas_data = uas_data.resample(time="AS").mean()
+uas_metrics = uas_data.pyt_metrics.xr_uas()
+validate_against_metric(uas_metrics, "UAS" + ("_ANN" if ANN_TEST else ""))
