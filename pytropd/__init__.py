@@ -1,3 +1,4 @@
+# ruff: noqa: F401
 # cleaning up namespace - sjs 1.27.22
 __version__ = "2.0"
 

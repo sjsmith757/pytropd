@@ -127,7 +127,7 @@ def validate_against_metric(computed_arr, metric, hem, tol=1e-5):
         logging.warning(
             f"{freq_str} validation and calculated {hem} "
             f" {base_metric} metrics are NOT equal with "
-            f"{pct_passing:.1f}% matching"
+            f"{pct_passing:.1f}% matching"  # noqa: F541
         )
         return False
 

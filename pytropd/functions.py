@@ -238,7 +238,8 @@ def TropD_Calculate_StreamFunction(
     Parameters
     ----------
     V : numpy.ndarray (dim1, ..., dimN-2, lat, lev)
-        N-dimensional array of zonal-mean meridional wind with final 2 axes corresponding to latitude and vertical level, respectively
+        N-dimensional array of zonal-mean meridional wind with final 2 axes corresponding to latitude
+        and vertical level, respectively
     lat : numpy.ndarray
         equally-spaced latitude array
     lev : numpy.ndarray
@@ -308,7 +309,8 @@ def TropD_Calculate_TropopauseHeight(
     numpy.ndarray (dim1, ..., dimN-1)
         the tropopause pressure in hPa
     numpy.ndarray (dim1, ..., dimN-1), optional
-        returned if Z is provided. Corresponds to Z evaluated at the tropopause. If Z is geopotential height, it is tropopause altitude (m)
+        returned if Z is provided. Corresponds to Z evaluated at the tropopause. If Z is geopotential height,
+        it is tropopause altitude (m)
     """
 
     COMPUTE_Z = Z is not None

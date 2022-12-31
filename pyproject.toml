@@ -1,0 +1,21 @@
+[package]
+name = "pytropd"
+version="2.02"
+description="Calculation of metrics of tropical width"
+license="GPL-3"
+author="Alison Ming, Paul William Staten, Samuel Smith"
+author_email="admg26@gmail.com"
+url="https://tropd.github.io/pytropd/index.html"
+requires-python=">=3.6"
+classifiers=["Programming Language :: Python :: 3"]
+
+dependencies = [
+		"numpy>=1.19",
+		"scipy>=1.5",
+		"matplotlib"
+]
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "UP"]
+target-version = "py36"
