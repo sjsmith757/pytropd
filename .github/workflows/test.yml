@@ -1,8 +1,7 @@
-name: Tests
+name: Linting
 on: [pull_request, push]
 jobs:
   linting:
-    name: General Linting
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -20,6 +19,6 @@ jobs:
           key: ${{ runner.os }}-linting-${{ hashFiles('**/poetry.lock') }}
           restore-keys: ${{ runner.os }}-linting-${{ hashFiles('**/poetry.lock') }}
 
-      - run: pip ruff black
+      - run: pip install ruff black
       - run: ruff .
       - run: black --diff --check .
